@@ -1,0 +1,12 @@
+# VPS Override — uses existing findata_db container (has seeded data)
+# Do NOT create a new findata_db — connect the existing one to panther-net instead
+# Usage: docker compose -f docker-compose.yml -f docker-compose.vps-override.yml --env-file .env up -d
+
+version: '3.8'
+
+volumes:
+  postgres_data:
+    external: true
+    name: finai-platform_postgres_data
+  n8n_data:
+    external: false
