@@ -1,0 +1,108 @@
+{
+  "name": "Panther AI Chat",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "panther/chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "panther-chat-webhook-001"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst message = data.message || '';\nconst user = data.user || {};\nconst sessionId = data.session_id || 'default';\n\nconst tableAccessList = Array.isArray(user.table_access) && user.table_access.length > 0\n  ? user.table_access.join(', ')\n  : 'holdings';\n\nconst systemPrompt = [\n  'You are Panther AI, an intelligent financial assistant for a professional investment management firm managing a $3 billion AUM portfolio.',\n  'You assist portfolio managers, analysts, traders, and compliance officers with concise, data-driven insights.',\n  '',\n  'Portfolio overview:',\n  '- Total AUM: ~$3 billion across multiple portfolios',\n  '- 206 active equity and fixed income holdings',\n  '- Key sectors: Technology, Healthcare, Financials, Energy, Consumer Discretionary, Industrials',\n  '- ESG-scored positions with active catalyst tracking',\n  '',\n  'User context:',\n  `- Name: ${user.full_name || 'User'}`,\n  `- Role: ${user.role || 'Analyst'}`,\n  `- Department: ${user.department || 'Research'}`,\n  `- Authorized data tables: ${tableAccessList}`,\n  '',\n  'Guidelines:',\n  '- Be concise and professional. Lead with the answer.',\n  '- When answering about portfolio data, reference the relevant metrics (AUM, weights, P&L, ESG scores, etc.).',\n  '- If a question requires real-time market data you cannot access, acknowledge it and provide guidance based on available portfolio context.',\n  '- Never fabricate specific trade details or prices not provided in the conversation.'\n].join('\\n');\n\nreturn [{\n  json: {\n    model: 'moonshot-v1-8k',\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: message }\n    ],\n    temperature: 0.3,\n    max_tokens: 1024,\n    _meta: { sessionId, userId: user.user_id }\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.moonshot.cn/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.MOONSHOT_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.model, messages: $json.messages, temperature: $json.temperature, max_tokens: $json.max_tokens }) }}",
+        "options": {
+          "timeout": 25000
+        }
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Call Moonshot API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst reply = response?.choices?.[0]?.message?.content\n  || 'I apologize, I was unable to generate a response at this time. Please try again.';\n\nreturn [{ json: { reply } }];"
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Extract Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: $json.reply }) }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Build Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [{ "node": "Call Moonshot API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Moonshot API": {
+      "main": [
+        [{ "node": "Extract Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Reply": {
+      "main": [
+        [{ "node": "Respond", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
