@@ -1,0 +1,50 @@
+name: Deploy Panther AI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          timeout: 120s
+          script: |
+            set -e
+            REPO_DIR="/opt/panther-ai"
+
+            # Clone if first time, else pull
+            if [ ! -d "$REPO_DIR/.git" ]; then
+              git clone https://github.com/vedraut/panther-ai.git "$REPO_DIR"
+            else
+              cd "$REPO_DIR" && git pull origin main
+            fi
+
+            cd "$REPO_DIR"
+
+            # Ensure .env exists
+            if [ ! -f "deploy/.env" ]; then
+              echo "ERROR: deploy/.env not found on VPS. Create it from deploy/.env.example"
+              exit 1
+            fi
+
+            # Build and restart
+            docker compose -f deploy/docker-compose.yml --env-file deploy/.env up --build -d --remove-orphans
+
+            # Health check
+            sleep 10
+            curl -sf http://localhost:3001/health && echo "API healthy" || echo "WARNING: API health check failed"
+
+            echo "Deploy complete: $(date)"

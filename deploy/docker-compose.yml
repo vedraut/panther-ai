@@ -1,0 +1,123 @@
+version: '3.8'
+
+networks:
+  panther-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  n8n_data:
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────
+  findata_db:
+    image: postgres:16-alpine
+    container_name: findata_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-finai_data}
+      POSTGRES_USER: ${DB_USER:-finai}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-FinAI2026Demo}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - panther-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-finai} -d ${DB_NAME:-finai_data}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── N8N ────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:0.229.0
+    container_name: n8n
+    restart: unless-stopped
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-Panther2026Demo!}
+      N8N_HOST: ${N8N_HOST:-api.ved-raut.tech}
+      N8N_PORT: ${N8N_PORT:-5678}
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-panther-n8n-encryption-key-2026}
+      WEBHOOK_URL: http://${N8N_HOST:-api.ved-raut.tech}:5678/
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: findata_db
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${DB_NAME:-finai_data}
+      DB_POSTGRESDB_USER: ${DB_USER:-finai}
+      DB_POSTGRESDB_PASSWORD: ${DB_PASSWORD:-FinAI2026Demo}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"
+    networks:
+      - panther-net
+    depends_on:
+      findata_db:
+        condition: service_healthy
+
+  # ── Backend API ────────────────────────────
+  panther-api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: panther-api
+    restart: unless-stopped
+    environment:
+      DB_HOST: findata_db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-finai_data}
+      DB_USER: ${DB_USER:-finai}
+      DB_PASSWORD: ${DB_PASSWORD:-FinAI2026Demo}
+      JWT_SECRET: ${JWT_SECRET:-panther-secret-2026}
+      PORT: 3001
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://panther.ved-raut.tech}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/panther/chat}
+    networks:
+      - panther-net
+    depends_on:
+      findata_db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend ───────────────────────────────
+  panther-frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: panther-frontend
+    restart: unless-stopped
+    networks:
+      - panther-net
+    depends_on:
+      - panther-api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Host Nginx Proxy ───────────────────────
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/panther.conf:/etc/nginx/conf.d/panther.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - panther-net
+    depends_on:
+      - panther-frontend
+      - panther-api
