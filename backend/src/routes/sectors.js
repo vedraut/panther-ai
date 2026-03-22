@@ -11,9 +11,9 @@ router.get('/', requireAuth, requireTable(['holdings']), async (req, res) => {
       SELECT
         sector,
         COUNT(DISTINCT ticker) AS ticker_count,
-        SUM(market_value) AS market_value,
+        SUM(market_value_usd) AS market_value,
         ROUND(SUM(weight_pct)::numeric, 4) AS total_weight,
-        SUM(unrealized_pnl + realized_pnl) AS total_pnl
+        SUM(unrealized_pnl) AS total_pnl
       FROM holdings
       GROUP BY sector
       ORDER BY market_value DESC
@@ -32,7 +32,7 @@ router.get('/asset-class', requireAuth, requireTable(['holdings']), async (req, 
       SELECT
         asset_class,
         COUNT(DISTINCT ticker) AS ticker_count,
-        SUM(market_value) AS market_value,
+        SUM(market_value_usd) AS market_value,
         ROUND(SUM(weight_pct)::numeric, 4) AS total_weight
       FROM holdings
       GROUP BY asset_class
@@ -51,7 +51,7 @@ router.get('/esg', requireAuth, requireTable(['holdings', 'esg_scores']), async 
     const result = await pool.query(`
       SELECT
         h.sector,
-        ROUND(AVG(e.esg_total_score)::numeric, 2) AS avg_esg_score,
+        ROUND(AVG(e.esg_overall)::numeric, 2) AS avg_esg_score,
         ROUND(AVG(e.environmental_score)::numeric, 2) AS avg_env,
         ROUND(AVG(e.social_score)::numeric, 2) AS avg_social,
         ROUND(AVG(e.governance_score)::numeric, 2) AS avg_gov,

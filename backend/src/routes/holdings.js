@@ -19,11 +19,15 @@ router.get('/', requireAuth, requireTable(['holdings']), async (req, res) => {
     const whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
     const result = await pool.query(`
-      SELECT h.*, p.portfolio_name
+      SELECT h.holding_id, h.ticker, h.company_name, h.sector, h.industry,
+             h.asset_class, h.country, h.currency, h.quantity,
+             h.avg_cost_basis, h.current_price, h.market_value_usd AS market_value,
+             h.unrealized_pnl, 0 AS realized_pnl,
+             h.weight_pct, p.portfolio_name
       FROM holdings h
       JOIN portfolios p ON h.portfolio_id = p.portfolio_id
       ${whereClause}
-      ORDER BY h.market_value DESC
+      ORDER BY h.market_value_usd DESC
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `, [...params, limit, offset]);
 
@@ -47,17 +51,17 @@ router.get('/', requireAuth, requireTable(['holdings']), async (req, res) => {
 router.get('/pnl', requireAuth, requireTable(['holdings']), async (req, res) => {
   try {
     const gainers = await pool.query(`
-      SELECT ticker, company_name, sector, unrealized_pnl, realized_pnl,
-             (unrealized_pnl + realized_pnl) AS total_pnl, market_value
+      SELECT ticker, company_name, sector, unrealized_pnl, 0 AS realized_pnl,
+             unrealized_pnl AS total_pnl, market_value_usd AS market_value
       FROM holdings
-      ORDER BY (unrealized_pnl + realized_pnl) DESC
+      ORDER BY unrealized_pnl DESC
       LIMIT 10
     `);
     const losers = await pool.query(`
-      SELECT ticker, company_name, sector, unrealized_pnl, realized_pnl,
-             (unrealized_pnl + realized_pnl) AS total_pnl, market_value
+      SELECT ticker, company_name, sector, unrealized_pnl, 0 AS realized_pnl,
+             unrealized_pnl AS total_pnl, market_value_usd AS market_value
       FROM holdings
-      ORDER BY (unrealized_pnl + realized_pnl) ASC
+      ORDER BY unrealized_pnl ASC
       LIMIT 10
     `);
     res.json({ gainers: gainers.rows, losers: losers.rows });
